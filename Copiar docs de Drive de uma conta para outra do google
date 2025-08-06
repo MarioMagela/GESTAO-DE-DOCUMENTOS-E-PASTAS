@@ -1,191 +1,31 @@
-function copyFolder() {
-  // IDs das pastas (substitua pelos IDs reais)
-  const sourceFolderId = '1wuuOb_pDsSXWRVfrsvG-PWp1jIMhKgeD';
-  const destinationFolderId = '1C4rbko8Zd2zcHvOS6MFrEZ4TP4HyfOJI';
+function copiarPastaOrigemDentroDoDestino() {
+  var idPastaOrigem = 'COLE_AQUI_O_ID_DA_PASTA_ORIGEM';     // Pasta compartilhada da Conta X
+  var idPastaDestino = 'COLE_AQUI_O_ID_DA_PASTA_DESTINO';   // Pasta existente na Conta Y
 
-  // Configurações (substitua pelo seu e-mail e ID da planilha)
-  const notificationEmail = 'seu.email@example.com'; // Substitua pelo e-mail para notificações
-  const logSpreadsheetId = 'INSIRA_ID_DA_PLANILHA'; // ID da planilha para logs (opcional)
-  const logSheetName = 'LogCopia'; // Nome da aba para logs
+  var pastaOrigem = DriveApp.getFolderById(idPastaOrigem);
+  var pastaDestino = DriveApp.getFolderById(idPastaDestino);
 
-  try {
-    // Validar IDs
-    if (!sourceFolderId || sourceFolderId.includes('#') || sourceFolderId.includes('&')) {
-      throw new Error('ID da pasta de origem inválido. Verifique e insira um ID válido.');
-    }
-    if (!destinationFolderId || destinationFolderId.includes('&') || destinationFolderId.includes('#')) {
-      throw new Error('ID da pasta de destino inválido. Verifique e insira um ID válido.');
-    }
+  // Cria dentro do destino uma nova pasta com o mesmo nome da origem
+  var novaPasta = pastaDestino.createFolder(pastaOrigem.getName());
 
-    // Obter as pastas de origem e destino
-    let sourceFolder, destinationFolder;
-    try {
-      sourceFolder = DriveApp.getFolderById(sourceFolderId);
-      Logger.log('Pasta de origem encontrada: ' + sourceFolder.getName());
-    } catch (e) {
-      throw new Error('Não foi possível acessar a pasta de origem com ID ' + sourceFolderId + ': ' + e);
-    }
+  copiarConteudoDaPasta(pastaOrigem, novaPasta);
 
-    try {
-      destinationFolder = DriveApp.getFolderById(destinationFolderId);
-      Logger.log('Pasta de destino encontrada: ' + destinationFolder.getName());
-    } catch (e) {
-      throw new Error('Não foi possível acessar a pasta de destino com ID ' + destinationFolderId + ': ' + e);
-    }
+  Logger.log('Pasta copiada! Estrutura: ' + pastaDestino.getName() + ' > ' + novaPasta.getName());
+}
 
-    // Verificar permissões
-    if (!sourceFolder.getAccess(Session.getActiveUser()).includes(DriveApp.Permission.VIEW)) {
-      throw new Error('Sem permissão de leitura na pasta de origem.');
-    }
-    if (!destinationFolder.getAccess(Session.getActiveUser()).includes(DriveApp.Permission.EDIT)) {
-      throw new Error('Sem permissão de escrita na pasta de destino.');
-    }
-
-    // Função para comparar e copiar arquivos
-    function copyFolderContents(source, destination) {
-      let fileCount = 0;
-      let folderCount = 0;
-
-      // Obter arquivos existentes no destino (para evitar duplicatas)
-      const destinationFiles = {};
-      const destFilesIterator = destination.getFiles();
-      while (destFilesIterator.hasNext()) {
-        const file = destFilesIterator.next();
-        destinationFiles[file.getName()] = file.getMd5Checksum();
-      }
-
-      // Copiar arquivos novos ou modificados
-      const files = source.getFiles();
-      while (files.hasNext()) {
-        const file = files.next();
-        const fileName = file.getName();
-        const sourceMd5 = file.getMd5Checksum();
-
-        // Copiar apenas se o arquivo não existe no destino ou foi modificado
-        if (!destinationFiles[fileName] || destinationFiles[fileName] !== sourceMd5) {
-          file.makeCopy(fileName, destination);
-          Logger.log('Arquivo copiado: ' + fileName);
-          fileCount++;
-        } else {
-          Logger.log('Arquivo ignorado (já existe e não modificado): ' + fileName);
-        }
-      }
-
-      // Obter subpastas existentes no destino
-      const destinationFolders = {};
-      const destFoldersIterator = destination.getFolders();
-      while (destFoldersIterator.hasNext()) {
-        const folder = destFoldersIterator.next();
-        destinationFolders[folder.getName()] = folder;
-      }
-
-      // Copiar subpastas
-      const subFolders = source.getFolders();
-      while (subFolders.hasNext()) {
-        const subFolder = subFolders.next();
-        const subFolderName = subFolder.getName();
-        let newSubFolder;
-
-        // Usar pasta existente ou criar nova
-        if (destinationFolders[subFolderName]) {
-          newSubFolder = destinationFolders[subFolderName];
-          Logger.log('Usando pasta existente: ' + subFolderName);
-        } else {
-          newSubFolder = destination.createFolder(subFolderName);
-          Logger.log('Pasta criada: ' + subFolderName);
-          folderCount++;
-        }
-
-        // Copiar conteúdo da subpasta
-        const subResult = copyFolderContents(subFolder, newSubFolder);
-        fileCount += subResult.files;
-        folderCount += subResult.folders;
-      }
-
-      return { files: fileCount, folders: folderCount };
-    }
-
-    // Verificar se a pasta principal já existe no destino
-    let newFolder;
-    const destinationFolders = destinationFolder.getFoldersByName(sourceFolder.getName());
-    if (destinationFolders.hasNext()) {
-      newFolder = destinationFolders.next();
-      Logger.log('Pasta principal existente encontrada: ' + newFolder.getName());
-    } else {
-      newFolder = destinationFolder.createFolder(sourceFolder.getName());
-      Logger.log('Pasta principal criada: ' + newFolder.getName());
-    }
-
-    // Copiar conteúdo
-    const result = copyFolderContents(sourceFolder, newFolder);
-
-    // Registrar resultado na planilha (opcional)
-    if (logSpreadsheetId) {
-      try {
-        const ss = SpreadsheetApp.openById(logSpreadsheetId);
-        let sheet = ss.getSheetByName(logSheetName);
-        if (!sheet) {
-          sheet = ss.insertSheet(logSheetName);
-          sheet.appendRow(['Data', 'Pasta Origem', 'Pasta Destino', 'Arquivos Copiados', 'Pastas Criadas', 'Status']);
-        }
-        sheet.appendRow([
-          new Date().toLocaleString('pt-BR'),
-          sourceFolder.getName(),
-          newFolder.getName(),
-          result.files,
-          result.folders,
-          'Sucesso'
-        ]);
-      } catch (e) {
-        Logger.log('Erro ao registrar na planilha: ' + e);
-      }
-    }
-
-    // Enviar notificação por e-mail
-    const subject = 'Cópia de Pasta Concluída';
-    const message = `
-      Cópia concluída com sucesso!
-      Pasta de origem: ${sourceFolder.getName()} (ID: ${sourceFolderId})
-      Pasta de destino: ${newFolder.getName()} (ID: ${newFolder.getId()})
-      Arquivos copiados: ${result.files}
-      Pastas criadas: ${result.folders}
-      Link da pasta copiada: ${newFolder.getUrl()}
-    `;
-    MailApp.sendEmail(notificationEmail, subject, message);
-    Logger.log('Cópia concluída com sucesso! E-mail enviado para: ' + notificationEmail);
-
-  } catch (e) {
-    // Registrar erro na planilha (opcional)
-    if (logSpreadsheetId) {
-      try {
-        const ss = SpreadsheetApp.openById(logSpreadsheetId);
-        let sheet = ss.getSheetByName(logSheetName);
-        if (!sheet) {
-          sheet = ss.insertSheet(logSheetName);
-          sheet.appendRow(['Data', 'Pasta Origem', 'Pasta Destino', 'Arquivos Copiados', 'Pastas Criadas', 'Status']);
-        }
-        sheet.appendRow([
-          new Date().toLocaleString('pt-BR'),
-          sourceFolderId,
-          destinationFolderId,
-          0,
-          0,
-          'Erro: ' + e
-        ]);
-      } catch (logError) {
-        Logger.log('Erro ao registrar na planilha: ' + logError);
-      }
-    }
-
-    // Enviar e-mail de erro
-    const subject = 'Erro ao Copiar Pasta';
-    const message = `
-      Ocorreu um erro ao copiar a pasta.
-      Erro: ${e}
-      Pasta de origem ID: ${sourceFolderId}
-      Pasta de destino ID: ${destinationFolderId}
-    `;
-    MailApp.sendEmail(notificationEmail, subject, message);
-    Logger.log('Erro: ' + e);
+// Função recursiva que copia todos os arquivos e subpastas
+function copiarConteudoDaPasta(origem, destino) {
+  // Copia arquivos
+  var arquivos = origem.getFiles();
+  while (arquivos.hasNext()) {
+    var arquivo = arquivos.next();
+    arquivo.makeCopy(arquivo.getName(), destino);
+  }
+  // Copia subpastas recursivamente
+  var subpastas = origem.getFolders();
+  while (subpastas.hasNext()) {
+    var subpastaOrigem = subpastas.next();
+    var subpastaDestino = destino.createFolder(subpastaOrigem.getName());
+    copiarConteudoDaPasta(subpastaOrigem, subpastaDestino);
   }
 }
